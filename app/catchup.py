@@ -134,32 +134,8 @@ class MessageCollector:
                         limit=200,
                         cursor=cursor
                     )
-                except SlackApiError as e:
-                    if e.response['error'] == 'not_in_channel':
-                        # 채널 타입 확인: 퍼블릭이면 자동 참여, 프라이빗이면 안내 메시지
-                        try:
-                            ch_info = self.client.conversations_info(channel=channel_id)
-                            is_private = ch_info['channel'].get('is_private', False)
-                        except SlackApiError:
-                            is_private = False
-
-                        if is_private:
-                            raise SlackApiError(
-                                message="not_in_channel",
-                                response={"ok": False, "error": "not_in_channel_private"}
-                            )
-
-                        logger.info(f"퍼블릭 채널 자동 참여 시도: {channel_id}")
-                        self.client.conversations_join(channel=channel_id)
-                        result = self.client.conversations_history(
-                            channel=channel_id,
-                            oldest=str(oldest),
-                            latest=str(latest),
-                            limit=200,
-                            cursor=cursor
-                        )
-                    else:
-                        raise
+                except SlackApiError:
+                    raise
                 logger.info(f"API response ok={result.get('ok')}, has_more={result.get('has_more')}")
 
                 raw_messages = result.get('messages', [])
@@ -222,8 +198,8 @@ class MessageCollector:
             
         except SlackApiError as e:
             error_code = e.response['error']
-            if error_code == 'not_in_channel_private':
-                error_msg = f"프라이빗 채널 #{channel_name}에 봇이 초대되지 않았습니다. 채널에서 `/invite @Nota Catchup Bot`을 실행해주세요."
+            if error_code == 'not_in_channel':
+                error_msg = f"채널 #{channel_name}에 봇이 초대되지 않았습니다. 채널에서 `/invite @Nota Catchup Bot`을 실행해주세요."
             else:
                 error_msg = f"Slack API 오류: {error_code}"
             return CatchupResult(

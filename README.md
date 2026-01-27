@@ -115,62 +115,79 @@ docker-compose up -d
 
 ## Part 3. 로컬 워커 설정 (각 사용자 — 본인 PC)
 
-### Step 1. 사전 준비
+### 사전 준비
+
+1. 관리자에게 아래 3가지 값을 받으세요:
+   - `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_BOT_TOKEN`
+
+2. Claude Code CLI 설치 및 로그인 (처음 1회):
+   ```bash
+   claude --version   # 설치 확인
+   claude             # 최초 로그인
+   ```
+
+### 자동 설정 (권장)
 
 ```bash
-# 코드 클론
 git clone <repo-url>
 cd Slack_catchup_bot
 
-# Python 가상환경
+# .env 파일 생성 후 관리자에게 받은 값 입력
+cp .env.example .env
+# SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_BOT_TOKEN 입력
+
+# 자동 설정 실행
+python setup_worker.py
+```
+
+5단계 자동 실행:
+1. Python 3.9+, Claude CLI 확인
+2. 가상환경 생성 + 의존성 설치
+3. `.env` 필수 값 검증
+4. OAuth 서버 실행 → 브라우저 인증 → 토큰 `.env` 자동 저장
+5. 워커 실행 여부 확인
+
+> Step 4에서 브라우저가 열리면 **인증서 경고 → '고급' → '계속 진행'** 후 **Slack에서 "허용"** 을 클릭하세요.
+
+### 수동 설정
+
+<details>
+<summary>자동 설정이 안 되는 경우 펼쳐보세요</summary>
+
+```bash
+# 1. 환경 준비
+git clone <repo-url>
+cd Slack_catchup_bot
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Claude Code CLI 설치 및 로그인 (처음 1회)
-claude --version
-claude
+# 2. .env 설정 (관리자에게 받은 값 입력)
+cp .env.example .env
+# SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_BOT_TOKEN 입력
+
+# 3. OAuth 토큰 발급
+python app/oauth_server.py --auto-save
+# 브라우저에서 https://localhost:3001/start 접속
+# → 인증서 경고 무시 → Slack에서 "허용" 클릭
+# → .env에 SLACK_USER_TOKEN, SLACK_USER_ID 자동 저장
+
+# 4. 워커 실행
+python app/worker.py
 ```
 
-### Step 2. 유저 토큰 발급 (본인 PC에서 1회)
+`--auto-save` 없이 실행하면 토큰이 화면에 표시되며 직접 `.env`에 복사해야 합니다.
 
-`.env` 파일에 `SLACK_CLIENT_ID`와 `SLACK_CLIENT_SECRET`를 입력합니다.
-(관리자에게 받으세요)
+</details>
 
-```
-SLACK_CLIENT_ID=...
-SLACK_CLIENT_SECRET=...
-```
+### 워커 사용법
 
-OAuth 서버를 실행합니다:
-```bash
-python app/oauth_server.py
-```
-
-브라우저에서 `http://localhost:3001/start` 접속:
-1. Slack 인증 페이지에서 "허용" 클릭
-2. 화면에 표시된 `SLACK_USER_TOKEN`과 `SLACK_USER_ID`를 복사
-3. OAuth 서버는 `Ctrl+C`로 종료 (다시 쓸 일 없음)
-
-### Step 3. .env 설정
-
-```
-SLACK_BOT_TOKEN=xoxb-...        # 관리자에게 받은 봇 토큰
-SLACK_USER_TOKEN=xoxp-...       # Step 2에서 발급받은 토큰
-SLACK_USER_ID=U0...             # Step 2에서 확인한 ID
-```
-
-### Step 4. 워커 실행
+워커는 **요약을 받고 싶을 때만 켜놓으면** 됩니다.
+꺼져 있을 때 요청한 파일은 DM에 남아있고, 워커를 다시 켜면 자동 처리됩니다.
 
 ```bash
 python app/worker.py
 ```
-
-워커가 실행되면 5초 간격으로 DM을 확인합니다.
-Slack에서 `/catchup`을 실행하면, 워커가 자동으로 요약을 생성하여 DM으로 보내줍니다.
-
-워커는 **요약을 받고 싶을 때만 켜놓으면** 됩니다.
-꺼져 있을 때 요청한 파일은 DM에 남아있고, 워커를 다시 켜면 자동 처리됩니다.
 
 ---
 

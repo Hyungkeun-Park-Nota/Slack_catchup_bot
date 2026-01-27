@@ -2,9 +2,6 @@
 slack-bolt==1.18.1
 slack-sdk==3.27.1
 
-# AI
-anthropic==0.39.0
-
 # Utils
 python-dotenv==1.0.1
 requests==2.31.0

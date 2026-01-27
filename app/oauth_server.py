@@ -6,12 +6,17 @@ Slack OAuth 서버 (HTTPS)
 실행: python app/oauth_server.py
 브라우저에서: https://localhost:3001/start
 (자체 서명 인증서를 사용하므로 브라우저 경고가 뜨면 무시하고 진행)
+
+--auto-save 모드: 토큰을 .env에 자동 저장하고 서버를 자동 종료합니다.
+실행: python app/oauth_server.py --auto-save
 """
 
 import os
+import re
 import ssl
 import json
 import logging
+import argparse
 import threading
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -20,6 +25,9 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# --auto-save 플래그 (모듈 레벨에서 참조)
+_auto_save = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +46,43 @@ KEY_FILE = os.path.join(CERT_DIR, "localhost-key.pem")
 
 # 워커가 DM 폴링에 필요한 최소 스코프
 USER_SCOPES = "im:history,im:read,files:read,files:write"
+
+# 프로젝트 루트 디렉토리 (.env 파일 위치)
+PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
+
+
+def _update_env_file(key: str, value: str):
+    """
+    .env 파일에 key=value를 업데이트하거나 추가한다.
+    이미 해당 키가 있으면 값을 교체하고, 없으면 파일 끝에 추가한다.
+    """
+    lines = []
+    found = False
+
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    pattern = re.compile(rf"^{re.escape(key)}\s*=")
+    new_lines = []
+    for line in lines:
+        if pattern.match(line):
+            new_lines.append(f"{key}={value}\n")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        # 마지막 줄이 빈 줄이 아니면 줄바꿈 추가
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines.append("\n")
+        new_lines.append(f"{key}={value}\n")
+
+    with open(ENV_FILE, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    logger.info(f".env 업데이트: {key}={'***' if 'TOKEN' in key else value}")
 
 
 class OAuthHandler(BaseHTTPRequestHandler):
@@ -110,6 +155,13 @@ class OAuthHandler(BaseHTTPRequestHandler):
 
         logger.info(f"Token issued for user: {user_id}")
 
+        if _auto_save:
+            self._handle_callback_auto_save(user_token, user_id)
+        else:
+            self._handle_callback_manual(user_token, user_id)
+
+    def _handle_callback_manual(self, user_token: str, user_id: str):
+        """수동 모드: 토큰을 화면에 표시"""
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Catchup Bot - 인증 완료</title>
 <style>
@@ -136,6 +188,37 @@ SLACK_USER_ID={user_id}</div>
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
+
+    def _handle_callback_auto_save(self, user_token: str, user_id: str):
+        """자동 저장 모드: 토큰을 .env에 저장하고 서버 자동 종료"""
+        _update_env_file("SLACK_USER_TOKEN", user_token)
+        _update_env_file("SLACK_USER_ID", user_id)
+        logger.info(f".env에 토큰 자동 저장 완료 (user: {user_id})")
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Catchup Bot - 자동 저장 완료</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; text-align: center; }}
+.success {{ background: #d4edda; color: #155724; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+h1 {{ color: #333; }}
+</style></head>
+<body>
+<h1>Catchup Bot 인증 완료</h1>
+<div class="success">
+<h2>토큰이 .env 파일에 자동 저장되었습니다.</h2>
+<p>SLACK_USER_TOKEN = xoxp-***</p>
+<p>SLACK_USER_ID = {user_id}</p>
+</div>
+<p>이 페이지를 닫아도 됩니다. 서버가 자동 종료됩니다.</p>
+</body></html>"""
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html.encode("utf-8"))
+
+        logger.info("Auto-save 완료. 서버를 종료합니다...")
+        threading.Thread(target=self.server.shutdown).start()
 
     def _handle_done(self):
         """토큰 확인 완료 → 서버 종료"""
@@ -186,6 +269,17 @@ def _ensure_certs():
 
 
 def main():
+    global _auto_save
+
+    parser = argparse.ArgumentParser(description="Slack OAuth 서버")
+    parser.add_argument(
+        "--auto-save",
+        action="store_true",
+        help="토큰을 .env 파일에 자동 저장하고 서버를 자동 종료합니다.",
+    )
+    args = parser.parse_args()
+    _auto_save = args.auto_save
+
     if not CLIENT_ID or not CLIENT_SECRET:
         logger.error("SLACK_CLIENT_ID, SLACK_CLIENT_SECRET 환경변수를 설정하세요.")
         return
@@ -197,7 +291,8 @@ def main():
     ssl_ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
     server.socket = ssl_ctx.wrap_socket(server.socket, server_side=True)
 
-    logger.info(f"OAuth server running on https://localhost:{OAUTH_PORT}")
+    mode_str = "[auto-save 모드]" if _auto_save else "[수동 모드]"
+    logger.info(f"OAuth server {mode_str} running on https://localhost:{OAUTH_PORT}")
     logger.info(f"브라우저에서 https://localhost:{OAUTH_PORT}/start 로 접속하세요.")
     logger.info("(자체 서명 인증서이므로 브라우저 경고가 뜨면 '고급' → '계속 진행')")
 

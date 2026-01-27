@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  catchup-bot:
+    build: .
+    container_name: catchup-bot
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs

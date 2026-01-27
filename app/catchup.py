@@ -126,13 +126,27 @@ class MessageCollector:
             cursor = None
             logger.info(f"Fetching messages: channel={channel_id}, oldest={oldest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(oldest))}), latest={latest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(latest))})")
             while True:
-                result = self.client.conversations_history(
-                    channel=channel_id,
-                    oldest=str(oldest),
-                    latest=str(latest),
-                    limit=200,
-                    cursor=cursor
-                )
+                try:
+                    result = self.client.conversations_history(
+                        channel=channel_id,
+                        oldest=str(oldest),
+                        latest=str(latest),
+                        limit=200,
+                        cursor=cursor
+                    )
+                except SlackApiError as e:
+                    if e.response['error'] == 'not_in_channel':
+                        logger.info(f"봇이 채널에 없습니다. 자동 참여 시도: {channel_id}")
+                        self.client.conversations_join(channel=channel_id)
+                        result = self.client.conversations_history(
+                            channel=channel_id,
+                            oldest=str(oldest),
+                            latest=str(latest),
+                            limit=200,
+                            cursor=cursor
+                        )
+                    else:
+                        raise
                 logger.info(f"API response ok={result.get('ok')}, has_more={result.get('has_more')}")
 
                 raw_messages = result.get('messages', [])

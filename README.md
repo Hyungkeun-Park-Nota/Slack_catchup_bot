@@ -42,12 +42,14 @@ Slack 채널 메시지를 AI로 요약해서 DM으로 전달하는 봇입니다.
 ### 2. 권한 설정 (OAuth & Permissions)
 
 **Bot Token Scopes:**
-- `channels:history`, `channels:read`
+- `channels:history`, `channels:read`, `channels:join`
 - `chat:write`, `commands`
 - `files:read`, `files:write`
 - `groups:history`, `groups:read`
 - `im:history`, `im:write`
 - `users:read`, `reactions:read`
+
+> `channels:join`: 퍼블릭 채널에 봇이 자동 참여하기 위해 필요합니다.
 
 **User Token Scopes:**
 - `im:history`, `im:read`
@@ -188,6 +190,15 @@ python app/worker.py
 ```bash
 python app/worker.py
 ```
+
+---
+
+## 채널 접근 권한
+
+| 채널 유형 | 동작 |
+|-----------|------|
+| **퍼블릭 채널** | `/catchup` 실행 시 봇이 자동 참여 (`channels:join` 스코프 필요) |
+| **프라이빗 채널** | 봇을 먼저 초대해야 합니다: 채널에서 `/invite @Nota Catchup Bot` 실행 |
 
 ---
 

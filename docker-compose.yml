@@ -11,3 +11,4 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ~/.claude:/root/.claude

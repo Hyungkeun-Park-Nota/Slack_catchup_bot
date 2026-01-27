@@ -30,10 +30,11 @@ app/
   catchup.py       - 데이터 모델 및 메시지 수집기
                      Message/CatchupResult 데이터클래스, MessageCollector
                      퍼블릭 채널은 conversations.join으로 자동 참여, 프라이빗은 /invite 안내
+                     프라이빗 채널 멤버십 체크, 쓰레드 단위 수집(collect_thread)
   summarizer.py    - Claude Code CLI 기반 요약기
                      메시지 컨텍스트 구성, claude CLI 호출, 구조화된 요약 생성
   parser.py        - /catchup 커맨드 파서
-                     기간(3d/12h/1w), from:링크, --threads, --channels 옵션 파싱
+                     기간(3d/12h/1w), from:링크/날짜, to:링크/날짜, in:링크, --threads, --channels 옵션 파싱
 
 setup_worker.py    - 워커 자동 설정 스크립트 (5단계)
 Dockerfile         - 중앙 봇용 Docker 이미지
@@ -138,6 +139,10 @@ docker-compose up -d
 /catchup 12h --threads               # 최근 12시간, 쓰레드 포함
 /catchup 1w --channels:#backend      # 최근 1주, 특정 채널
 /catchup from:<메시지_링크>           # 특정 메시지 이후 요약
+/catchup from:<YYYY-MM-DD>           # 특정 날짜 이후 요약
+/catchup from:<시작> to:<끝>         # 시간 범위 지정 (링크 또는 날짜)
+/catchup 3d to:<YYYY-MM-DD>         # 지정 날짜 기준 역산
+/catchup in:<메시지_링크>             # 특정 쓰레드만 요약
 /catchup clear                       # 봇 DM 메시지/파일 전체 삭제
 ```
 
@@ -152,6 +157,7 @@ docker-compose up -d
 - **퍼블릭 채널**: `conversations.join` API로 자동 참여 (채널에 시스템 메시지 안 남음, `channels:join` 스코프 필요)
 - **프라이빗 채널**: `/invite @Nota Catchup Bot`으로 수동 초대 필요
 - 프라이빗 채널에서 초대 없이 `/catchup` 실행 시 DM으로 `/invite` 안내 메시지 전달
+- **프라이빗 채널 멤버십 체크**: 사용자가 본인이 속하지 않은 프라이빗 채널의 메시지를 수집하지 못하도록 차단. `conversations_members` API로 멤버 확인
 
 ### DM 메시지 동작
 - 링크 프리뷰(unfurl) 비활성화: `unfurl_links=False`, `unfurl_media=False`

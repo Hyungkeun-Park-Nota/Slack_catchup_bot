@@ -98,6 +98,114 @@ class MessageCollector:
         except SlackApiError:
             return ""
     
+    def is_private_channel(self, channel_id: str) -> bool:
+        """채널이 프라이빗인지 확인"""
+        try:
+            ch_info = self.client.conversations_info(channel=channel_id)
+            return ch_info['channel'].get('is_private', False)
+        except SlackApiError:
+            return True  # 확인 실패 시 안전하게 프라이빗 취급
+
+    def check_user_membership(self, channel_id: str, user_id: str) -> bool:
+        """사용자가 채널의 멤버인지 확인 (페이지네이션 지원)"""
+        try:
+            cursor = None
+            while True:
+                result = self.client.conversations_members(
+                    channel=channel_id,
+                    limit=200,
+                    cursor=cursor
+                )
+                if user_id in result.get('members', []):
+                    return True
+                if not result.get('response_metadata', {}).get('next_cursor'):
+                    break
+                cursor = result['response_metadata']['next_cursor']
+            return False
+        except SlackApiError:
+            return False  # 확인 실패 시 안전하게 비멤버 취급
+
+    def collect_thread(
+        self,
+        channel_id: str,
+        thread_ts: str,
+        include_bots: bool = False
+    ) -> CatchupResult:
+        """특정 쓰레드의 메시지 수집 (부모 포함)
+
+        Args:
+            channel_id: 채널 ID
+            thread_ts: 쓰레드 부모 메시지 타임스탬프
+            include_bots: 봇 메시지 포함 여부
+        """
+        channel_name = self.get_channel_name(channel_id)
+        messages = []
+
+        try:
+            cursor = None
+            while True:
+                result = self.client.conversations_replies(
+                    channel=channel_id,
+                    ts=thread_ts,
+                    limit=200,
+                    cursor=cursor
+                )
+
+                for msg in result.get('messages', []):
+                    is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
+                    if is_bot and not include_bots:
+                        continue
+
+                    user_id = msg.get('user', 'unknown')
+
+                    messages.append(Message(
+                        ts=msg['ts'],
+                        user=user_id,
+                        user_name=self.get_user_name(user_id) if not is_bot else msg.get('username', 'Bot'),
+                        text=msg.get('text', ''),
+                        channel=channel_id,
+                        channel_name=channel_name,
+                        permalink=self.get_permalink(channel_id, msg['ts']),
+                        reply_count=msg.get('reply_count', 0),
+                        reaction_count=sum(r.get('count', 0) for r in msg.get('reactions', [])),
+                        is_bot=is_bot
+                    ))
+
+                if not result.get('has_more', False):
+                    break
+                cursor = result.get('response_metadata', {}).get('next_cursor')
+
+            # 시간순 정렬
+            messages.sort(key=lambda m: float(m.ts))
+
+            start_time = time.strftime('%Y-%m-%d %H:%M', time.localtime(float(messages[0].ts))) if messages else ""
+            end_time = time.strftime('%Y-%m-%d %H:%M', time.localtime(float(messages[-1].ts))) if messages else ""
+
+            return CatchupResult(
+                channel_name=channel_name,
+                messages=messages,
+                start_time=start_time,
+                end_time=end_time,
+                total_count=len(messages)
+            )
+
+        except SlackApiError as e:
+            error_code = e.response['error']
+            if error_code == 'thread_not_found':
+                error_msg = "해당 쓰레드를 찾을 수 없습니다."
+            elif error_code == 'not_in_channel':
+                error_msg = f"채널 #{channel_name}에 봇이 초대되지 않았습니다. 채널에서 `/invite @Nota Catchup Bot`을 실행해주세요."
+            else:
+                error_msg = f"Slack API 오류: {error_code}"
+            return CatchupResult(
+                channel_name=channel_name,
+                messages=[],
+                start_time="",
+                end_time="",
+                total_count=0,
+                error=error_msg
+            )
+
     def collect_messages(
         self,
         channel_id: str,
@@ -137,13 +245,7 @@ class MessageCollector:
                 except SlackApiError as e:
                     if e.response['error'] == 'not_in_channel':
                         # 퍼블릭 채널이면 자동 참여 (시스템 메시지 없음)
-                        try:
-                            ch_info = self.client.conversations_info(channel=channel_id)
-                            is_private = ch_info['channel'].get('is_private', False)
-                        except SlackApiError:
-                            is_private = True  # 확인 실패 시 안전하게 프라이빗 취급
-
-                        if is_private:
+                        if self.is_private_channel(channel_id):
                             raise
 
                         logger.info(f"퍼블릭 채널 자동 참여: {channel_id}")

@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 
@@ -12,6 +13,14 @@ class CatchupCommand:
     from_link: Optional[str] = None         # Slack 메시지 링크
     from_timestamp: Optional[str] = None    # 링크에서 추출한 타임스탬프
     from_channel: Optional[str] = None      # 링크에서 추출한 채널 ID
+    from_date: Optional[str] = None         # YYYY-MM-DD 형식 날짜
+    to_link: Optional[str] = None           # to: Slack 메시지 링크
+    to_timestamp: Optional[str] = None      # to: 링크/날짜에서 추출한 타임스탬프
+    to_channel: Optional[str] = None        # to: 링크에서 추출한 채널 ID
+    to_date: Optional[str] = None           # to: YYYY-MM-DD 형식 날짜
+    in_link: Optional[str] = None           # in: Slack 메시지 링크 (쓰레드)
+    in_timestamp: Optional[str] = None      # in: 링크에서 추출한 타임스탬프
+    in_channel: Optional[str] = None        # in: 링크에서 추출한 채널 ID
     include_threads: bool = False           # --threads 플래그
     include_bots: bool = False              # --include-bots 플래그
     channels: list[str] = None              # --channels 옵션
@@ -65,6 +74,39 @@ def parse_slack_link(link: str) -> tuple[Optional[str], Optional[str]]:
     return channel_id, timestamp
 
 
+def parse_date_to_timestamp(date_str: str) -> Optional[float]:
+    """YYYY-MM-DD 날짜 문자열을 Unix timestamp로 변환 (로컬 00:00:00)
+
+    예: "2026-01-20" -> 해당 날짜 00:00:00의 Unix timestamp
+    """
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+
+def parse_link_or_date(value: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Slack 링크 또는 YYYY-MM-DD 날짜를 파싱
+
+    반환: (timestamp, channel_id, link, date_str)
+    - 링크인 경우: (ts, channel, link, None)
+    - 날짜인 경우: (ts, None, None, date_str)
+    - 실패: (None, None, None, None)
+    """
+    # 먼저 Slack 링크 시도
+    channel_id, timestamp = parse_slack_link(value)
+    if channel_id and timestamp:
+        return timestamp, channel_id, value, None
+
+    # 날짜 시도
+    ts = parse_date_to_timestamp(value)
+    if ts is not None:
+        return str(ts), None, None, value
+
+    return None, None, None, None
+
+
 def parse_channels(channels_str: str) -> list[str]:
     """채널 목록 문자열 파싱
     
@@ -114,16 +156,42 @@ def parse_command(text: str) -> CatchupCommand:
             channels_str = token[len('--channels:'):]
             cmd.channels = parse_channels(channels_str)
         
-        # from:링크 옵션
+        # from:링크 또는 from:날짜 옵션
         elif token.startswith('from:'):
-            link = token[len('from:'):]
-            cmd.from_link = link
+            value = token[len('from:'):]
+            ts, ch, link, date_str = parse_link_or_date(value)
+            if ts:
+                cmd.from_timestamp = ts
+                cmd.from_channel = ch
+                cmd.from_link = link
+                cmd.from_date = date_str
+            else:
+                cmd.error = "잘못된 from: 형식입니다. Slack 링크 또는 YYYY-MM-DD 날짜를 입력하세요."
+                return cmd
+
+        # to:링크 또는 to:날짜 옵션
+        elif token.startswith('to:'):
+            value = token[len('to:'):]
+            ts, ch, link, date_str = parse_link_or_date(value)
+            if ts:
+                cmd.to_timestamp = ts
+                cmd.to_channel = ch
+                cmd.to_link = link
+                cmd.to_date = date_str
+            else:
+                cmd.error = "잘못된 to: 형식입니다. Slack 링크 또는 YYYY-MM-DD 날짜를 입력하세요."
+                return cmd
+
+        # in:링크 옵션 (특정 쓰레드만 요약)
+        elif token.startswith('in:'):
+            link = token[len('in:'):]
             channel_id, timestamp = parse_slack_link(link)
             if channel_id and timestamp:
-                cmd.from_channel = channel_id
-                cmd.from_timestamp = timestamp
+                cmd.in_link = link
+                cmd.in_channel = channel_id
+                cmd.in_timestamp = timestamp
             else:
-                cmd.error = "잘못된 Slack 링크 형식입니다."
+                cmd.error = "잘못된 in: 링크 형식입니다. Slack 메시지 링크를 입력하세요."
                 return cmd
         
         # 기간 (3d, 12h, 1w 등)
@@ -141,10 +209,28 @@ def parse_command(text: str) -> CatchupCommand:
         
         i += 1
     
-    # 기간도 없고 from 링크도 없으면 헬프
-    if cmd.duration is None and cmd.from_link is None:
+    # in:은 from:, to:, 기간과 동시 사용 불가
+    if cmd.in_link:
+        if cmd.from_timestamp or cmd.to_timestamp or cmd.duration:
+            cmd.error = "in: 옵션은 from:, to:, 기간과 함께 사용할 수 없습니다."
+            return cmd
+        return cmd
+
+    # to:만 있고 from:/기간이 없으면 에러
+    if cmd.to_timestamp and cmd.from_timestamp is None and cmd.duration is None:
+        cmd.error = "to: 옵션은 from: 또는 기간과 함께 사용해야 합니다."
+        return cmd
+
+    # from: ≥ to: 이면 에러
+    if cmd.from_timestamp and cmd.to_timestamp:
+        if float(cmd.from_timestamp) >= float(cmd.to_timestamp):
+            cmd.error = "from: 시점이 to: 시점보다 이전이어야 합니다."
+            return cmd
+
+    # 기간도 없고 from 링크/날짜도 없으면 헬프
+    if cmd.duration is None and cmd.from_link is None and cmd.from_date is None:
         cmd.is_help = True
-    
+
     return cmd
 
 
@@ -156,7 +242,15 @@ def get_help_message() -> str:
 • `/catchup 3d` - 최근 3일간 메시지 요약
 • `/catchup 12h` - 최근 12시간 메시지 요약
 • `/catchup 1w` - 최근 1주일 메시지 요약
+
+*시간 범위 지정*
 • `/catchup from:<링크>` - 해당 메시지 시점부터 현재까지 요약
+• `/catchup from:<YYYY-MM-DD>` - 해당 날짜부터 현재까지 요약
+• `/catchup from:<시작> to:<끝>` - 시작~끝 범위 요약 (링크 또는 날짜)
+• `/catchup 3d to:<YYYY-MM-DD>` - 지정 날짜 기준 최근 3일 요약
+
+*쓰레드 요약*
+• `/catchup in:<링크>` - 해당 메시지의 쓰레드만 요약
 
 *옵션*
 • `--threads` - 쓰레드 내용 포함
@@ -169,4 +263,6 @@ def get_help_message() -> str:
 /catchup 1w --threads
 /catchup 3d --channels:#backend,#frontend
 /catchup from:https://slack.com/archives/C0123/p1234567890
+/catchup from:2026-01-20 to:2026-01-25
+/catchup in:https://slack.com/archives/C0123/p1234567890
 ```"""

@@ -68,7 +68,34 @@ def handle_catchup(ack, command, client, logger):
 
     # 메시지 수집기 초기화
     collector = MessageCollector(client)
-    
+
+    # in: 쓰레드 요약 분기
+    if cmd.in_timestamp:
+        result = collector.collect_thread(
+            channel_id=cmd.in_channel,
+            thread_ts=cmd.in_timestamp,
+            include_bots=cmd.include_bots
+        )
+        delete_dm(client, user_id, status_ts)
+        if result.error:
+            send_dm(client, user_id, f"⚠️ {result.error}")
+            return
+        if result.total_count == 0:
+            send_dm(client, user_id, "ℹ️ 해당 쓰레드에 메시지가 없습니다.")
+            return
+        catchup_json = build_catchup_json(
+            user_id=user_id,
+            command_text=text,
+            results=[result]
+        )
+        success = upload_catchup_file(client, user_id, catchup_json)
+        if success:
+            send_dm(client, user_id, "✅ 쓰레드 수집 완료! 워커가 요약을 생성합니다.")
+        else:
+            send_dm(client, user_id, "❌ 데이터 파일 업로드에 실패했습니다.")
+        logger.info(f"Catchup thread data file uploaded for {user_id}")
+        return
+
     # 대상 채널 결정
     if cmd.channels:
         target_channels = []
@@ -79,27 +106,45 @@ def handle_catchup(ack, command, client, logger):
             else:
                 send_dm(client, user_id, f"⚠️ 채널을 찾을 수 없습니다: #{ch_name}")
         if not target_channels:
+            delete_dm(client, user_id, status_ts)
             return
     else:
         target_channels = [channel_id]
-    
+
+    # from: 링크의 채널 사용 (날짜가 아닌 링크인 경우)
+    if cmd.from_channel:
+        target_channels = [cmd.from_channel]
+
+    # 프라이빗 채널 멤버십 체크
+    checked_channels = []
+    for ch_id in target_channels:
+        if collector.is_private_channel(ch_id):
+            if not collector.check_user_membership(ch_id, user_id):
+                ch_name = collector.get_channel_name(ch_id)
+                send_dm(client, user_id, f"⚠️ 프라이빗 채널 #{ch_name}의 멤버가 아닙니다. 해당 채널의 메시지를 수집할 수 없습니다.")
+                continue
+        checked_channels.append(ch_id)
+
+    if not checked_channels:
+        delete_dm(client, user_id, status_ts)
+        return
+    target_channels = checked_channels
+
     # 시간 범위 결정
     now = time.time()
+    latest = float(cmd.to_timestamp) if cmd.to_timestamp else now
     if cmd.from_timestamp:
         oldest = float(cmd.from_timestamp)
-        # from: 링크의 채널 사용
-        if cmd.from_channel:
-            target_channels = [cmd.from_channel]
     else:
-        oldest = now - cmd.duration_seconds
-    
+        oldest = latest - cmd.duration_seconds
+
     # 각 채널별 메시지 수집 및 요약
     results = []
     for ch_id in target_channels:
         result = collector.collect_messages(
             channel_id=ch_id,
             oldest=oldest,
-            latest=now,
+            latest=latest,
             include_threads=cmd.include_threads,
             include_bots=cmd.include_bots
         )

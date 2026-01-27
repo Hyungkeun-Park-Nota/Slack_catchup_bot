@@ -29,7 +29,7 @@ app/
                      유저 토큰(xoxp-) 발급. --auto-save 플래그로 .env 자동 저장 지원
   catchup.py       - 데이터 모델 및 메시지 수집기
                      Message/CatchupResult 데이터클래스, MessageCollector
-                     봇이 채널에 없으면 /invite 안내 에러 반환 (자동 참여 없음)
+                     퍼블릭 채널은 conversations.join으로 자동 참여, 프라이빗은 /invite 안내
   summarizer.py    - Claude Code CLI 기반 요약기
                      메시지 컨텍스트 구성, claude CLI 호출, 구조화된 요약 생성
   parser.py        - /catchup 커맨드 파서
@@ -149,9 +149,9 @@ docker-compose up -d
 - 이 변수들은 `oauth_server.py`에서만 사용됨
 
 ### 채널 접근 권한
-- 봇이 메시지를 수집하려면 해당 채널에 먼저 초대되어야 함: `/invite @Nota Catchup Bot`
-- 퍼블릭/프라이빗 구분 없이 동일하게 수동 초대 필요
-- 초대 없이 `/catchup` 실행 시 DM으로 `/invite` 안내 메시지 전달
+- **퍼블릭 채널**: `conversations.join` API로 자동 참여 (채널에 시스템 메시지 안 남음, `channels:join` 스코프 필요)
+- **프라이빗 채널**: `/invite @Nota Catchup Bot`으로 수동 초대 필요
+- 프라이빗 채널에서 초대 없이 `/catchup` 실행 시 DM으로 `/invite` 안내 메시지 전달
 
 ### DM 메시지 동작
 - 링크 프리뷰(unfurl) 비활성화: `unfurl_links=False`, `unfurl_media=False`

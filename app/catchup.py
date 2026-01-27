@@ -134,8 +134,29 @@ class MessageCollector:
                         limit=200,
                         cursor=cursor
                     )
-                except SlackApiError:
-                    raise
+                except SlackApiError as e:
+                    if e.response['error'] == 'not_in_channel':
+                        # 퍼블릭 채널이면 자동 참여 (시스템 메시지 없음)
+                        try:
+                            ch_info = self.client.conversations_info(channel=channel_id)
+                            is_private = ch_info['channel'].get('is_private', False)
+                        except SlackApiError:
+                            is_private = True  # 확인 실패 시 안전하게 프라이빗 취급
+
+                        if is_private:
+                            raise
+
+                        logger.info(f"퍼블릭 채널 자동 참여: {channel_id}")
+                        self.client.conversations_join(channel=channel_id)
+                        result = self.client.conversations_history(
+                            channel=channel_id,
+                            oldest=str(oldest),
+                            latest=str(latest),
+                            limit=200,
+                            cursor=cursor
+                        )
+                    else:
+                        raise
                 logger.info(f"API response ok={result.get('ok')}, has_more={result.get('has_more')}")
 
                 raw_messages = result.get('messages', [])

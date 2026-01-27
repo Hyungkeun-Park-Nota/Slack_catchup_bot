@@ -29,6 +29,7 @@ app/
                      유저 토큰(xoxp-) 발급. --auto-save 플래그로 .env 자동 저장 지원
   catchup.py       - 데이터 모델 및 메시지 수집기
                      Message/CatchupResult 데이터클래스, MessageCollector
+                     봇이 채널에 없으면 /invite 안내 에러 반환 (자동 참여 없음)
   summarizer.py    - Claude Code CLI 기반 요약기
                      메시지 컨텍스트 구성, claude CLI 호출, 구조화된 요약 생성
   parser.py        - /catchup 커맨드 파서
@@ -147,6 +148,11 @@ docker-compose up -d
 - `main.py`에서 봇 초기화 전에 해당 변수를 `os.environ`에서 제거하여 해결
 - 이 변수들은 `oauth_server.py`에서만 사용됨
 
+### 채널 접근 권한
+- 봇이 메시지를 수집하려면 해당 채널에 먼저 초대되어야 함: `/invite @Nota Catchup Bot`
+- 퍼블릭/프라이빗 구분 없이 동일하게 수동 초대 필요
+- 초대 없이 `/catchup` 실행 시 DM으로 `/invite` 안내 메시지 전달
+
 ### DM 메시지 동작
 - 링크 프리뷰(unfurl) 비활성화: `unfurl_links=False`, `unfurl_media=False`
 - 중간 상태 메시지("수집 중", "수집 완료", "요약 생성 중")는 요약 완료 후 자동 삭제
@@ -166,6 +172,10 @@ docker-compose up -d
 - `main.py`가 Bolt OAuth 모드로 전환된 경우 발생
 - `main.py` 코드에서 `os.environ.pop("SLACK_CLIENT_ID")` 처리가 되어 있는지 확인
 - 봇 프로세스 재시작
+
+### "not_in_channel" 에러
+- 봇이 해당 채널에 초대되지 않은 상태
+- 채널에서 `/invite @Nota Catchup Bot` 실행 후 재시도
 
 ### 워커가 요약을 생성하지 않음
 - `claude --version`으로 Claude CLI 설치 확인

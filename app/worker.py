@@ -91,6 +91,7 @@ class CatchupWorker:
         status_keywords = (
             "메시지를 수집하고 요약하는 중",
             "메시지 수집 완료",
+            "쓰레드 수집 완료",
             "Claude로 요약을 생성하는 중",
         )
         try:

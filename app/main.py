@@ -138,6 +138,12 @@ def handle_catchup(ack, command, client, logger):
     else:
         oldest = latest - cmd.duration_seconds
 
+    logger.info(
+        f"Time range: oldest={oldest} ({datetime.fromtimestamp(oldest):%Y-%m-%d %H:%M:%S}), "
+        f"latest={latest} ({datetime.fromtimestamp(latest):%Y-%m-%d %H:%M:%S}), "
+        f"channels={target_channels}"
+    )
+
     # 각 채널별 메시지 수집 및 요약
     results = []
     for ch_id in target_channels:

@@ -1,8 +1,11 @@
 import time
+import logging
 from dataclasses import dataclass
 from typing import Optional
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -121,6 +124,7 @@ class MessageCollector:
         try:
             # 메시지 히스토리 조회
             cursor = None
+            logger.info(f"Fetching messages: channel={channel_id}, oldest={oldest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(oldest))}), latest={latest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(latest))})")
             while True:
                 result = self.client.conversations_history(
                     channel=channel_id,
@@ -129,15 +133,21 @@ class MessageCollector:
                     limit=200,
                     cursor=cursor
                 )
-                
-                for msg in result.get('messages', []):
+                logger.info(f"API response ok={result.get('ok')}, has_more={result.get('has_more')}")
+
+                raw_messages = result.get('messages', [])
+                logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
+
+                for msg in raw_messages:
                     # 봇 메시지 필터링
                     is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
                     if is_bot and not include_bots:
+                        logger.debug(f"Skipping bot message: {msg.get('text', '')[:50]}")
                         continue
-                    
+
                     # 서브타입 메시지 스킵 (채널 입장/퇴장 등)
                     if msg.get('subtype') in ['channel_join', 'channel_leave', 'channel_topic']:
+                        logger.debug(f"Skipping subtype: {msg.get('subtype')}")
                         continue
                     
                     user_id = msg.get('user', 'unknown')

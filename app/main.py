@@ -1,13 +1,15 @@
 import os
+import json
 import time
+import tempfile
 import logging
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from parser import parse_command, get_help_message
-from catchup import MessageCollector, format_messages_for_summary
-from summarizer import Summarizer
+from catchup import MessageCollector, CatchupResult
 
 # 환경변수 로드
 load_dotenv()
@@ -25,9 +27,6 @@ app = App(
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
 )
 
-# 요약기 초기화
-summarizer = Summarizer()
-
 
 @app.command("/catchup")
 def handle_catchup(ack, command, client, logger):
@@ -40,7 +39,12 @@ def handle_catchup(ack, command, client, logger):
     text = command.get('text', '').strip()
     
     logger.info(f"Catchup command from {user_id} in {channel_id}: {text}")
-    
+
+    # clear 커맨드 처리
+    if text.lower() == "clear":
+        clear_dm(client, user_id)
+        return
+
     # 커맨드 파싱
     cmd = parse_command(text)
     
@@ -96,16 +100,157 @@ def handle_catchup(ack, command, client, logger):
         )
         results.append(result)
     
-    # 요약 생성
-    if len(results) == 1:
-        summary = summarizer.summarize(results[0])
+    # JSON 생성 및 파일 업로드
+    catchup_json = build_catchup_json(
+        user_id=user_id,
+        command_text=text,
+        results=results
+    )
+
+    success = upload_catchup_file(client, user_id, catchup_json)
+    if success:
+        send_dm(client, user_id, "✅ 메시지 수집 완료! 데이터 파일을 업로드했습니다. 로컬 워커가 요약을 생성합니다.")
     else:
-        summary = summarizer.summarize_multiple(results)
-    
-    # DM으로 전송
-    send_dm(client, user_id, summary)
-    
-    logger.info(f"Catchup summary sent to {user_id}")
+        send_dm(client, user_id, "❌ 데이터 파일 업로드에 실패했습니다.")
+
+    logger.info(f"Catchup data file uploaded for {user_id}")
+
+
+def build_catchup_json(user_id: str, command_text: str, results: list[CatchupResult]) -> dict:
+    """CatchupResult 리스트를 JSON dict로 변환"""
+    channels = []
+    for result in results:
+        messages_data = []
+        for msg in result.messages:
+            thread_data = []
+            for tmsg in msg.thread_messages:
+                thread_data.append({
+                    "ts": tmsg.ts,
+                    "user": tmsg.user,
+                    "user_name": tmsg.user_name,
+                    "text": tmsg.text,
+                    "channel": tmsg.channel,
+                    "channel_name": tmsg.channel_name,
+                    "permalink": tmsg.permalink,
+                    "reply_count": tmsg.reply_count,
+                    "reaction_count": tmsg.reaction_count,
+                    "importance_score": tmsg.importance_score,
+                    "is_bot": tmsg.is_bot,
+                    "thread_messages": []
+                })
+            messages_data.append({
+                "ts": msg.ts,
+                "user": msg.user,
+                "user_name": msg.user_name,
+                "text": msg.text,
+                "channel": msg.channel,
+                "channel_name": msg.channel_name,
+                "permalink": msg.permalink,
+                "reply_count": msg.reply_count,
+                "reaction_count": msg.reaction_count,
+                "importance_score": msg.importance_score,
+                "is_bot": msg.is_bot,
+                "thread_messages": thread_data
+            })
+        channels.append({
+            "channel_name": result.channel_name,
+            "start_time": result.start_time,
+            "end_time": result.end_time,
+            "total_count": result.total_count,
+            "error": result.error,
+            "messages": messages_data
+        })
+
+    return {
+        "version": "1.0",
+        "type": "catchup_data",
+        "request": {
+            "user_id": user_id,
+            "command_text": command_text,
+            "requested_at": datetime.now(timezone.utc).isoformat()
+        },
+        "channels": channels
+    }
+
+
+def upload_catchup_file(client, user_id: str, catchup_json: dict) -> bool:
+    """JSON 데이터를 임시파일로 저장 후 DM에 업로드"""
+    try:
+        # DM 채널 열기
+        response = client.conversations_open(users=[user_id])
+        dm_channel = response['channel']['id']
+
+        timestamp = int(time.time())
+        filename = f"catchup_data_{user_id}_{timestamp}.json"
+
+        # 임시파일에 JSON 저장
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, prefix='catchup_'
+        ) as f:
+            json.dump(catchup_json, f, ensure_ascii=False, indent=2)
+            tmp_path = f.name
+
+        try:
+            client.files_upload_v2(
+                channel=dm_channel,
+                file=tmp_path,
+                filename=filename,
+                title=f"Catchup Data ({filename})"
+            )
+            return True
+        finally:
+            os.unlink(tmp_path)
+
+    except Exception as e:
+        logger.error(f"Failed to upload catchup file for {user_id}: {e}")
+        return False
+
+
+def clear_dm(client, user_id: str):
+    """DM 채널의 봇 메시지와 파일을 모두 삭제"""
+    try:
+        response = client.conversations_open(users=[user_id])
+        dm_channel = response['channel']['id']
+
+        deleted_msgs = 0
+        deleted_files = 0
+        cursor = None
+
+        while True:
+            result = client.conversations_history(
+                channel=dm_channel,
+                limit=100,
+                cursor=cursor
+            )
+
+            messages = result.get('messages', [])
+            if not messages:
+                break
+
+            for msg in messages:
+                # 파일 삭제
+                for f in msg.get('files', []):
+                    try:
+                        client.files_delete(file=f['id'])
+                        deleted_files += 1
+                    except Exception:
+                        pass
+
+                # 봇이 보낸 메시지 삭제
+                try:
+                    client.chat_delete(channel=dm_channel, ts=msg['ts'])
+                    deleted_msgs += 1
+                except Exception:
+                    pass
+
+            if not result.get('has_more', False):
+                break
+            cursor = result.get('response_metadata', {}).get('next_cursor')
+
+        logger.info(f"DM cleared for {user_id}: {deleted_msgs} messages, {deleted_files} files")
+
+    except Exception as e:
+        logger.error(f"Failed to clear DM for {user_id}: {e}")
 
 
 def send_dm(client, user_id: str, message: str):

@@ -2,5 +2,8 @@
 slack-bolt==1.18.1
 slack-sdk==3.27.1
 
+# HTTP
+requests==2.31.0
+
 # Utils
 python-dotenv==1.0.1

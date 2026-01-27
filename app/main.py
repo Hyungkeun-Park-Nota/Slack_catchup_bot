@@ -103,8 +103,19 @@ def handle_catchup(ack, command, client, logger):
             include_threads=cmd.include_threads,
             include_bots=cmd.include_bots
         )
-        results.append(result)
-    
+        if result.error:
+            # 에러가 있는 채널은 즉시 사용자에게 알림
+            send_dm(client, user_id, f"⚠️ {result.error}")
+        else:
+            results.append(result)
+
+    # 수집 상태 메시지 삭제
+    delete_dm(client, user_id, status_ts)
+
+    # 정상 수집된 채널이 없으면 종료
+    if not results:
+        return
+
     # JSON 생성 및 파일 업로드
     catchup_json = build_catchup_json(
         user_id=user_id,
@@ -113,8 +124,6 @@ def handle_catchup(ack, command, client, logger):
     )
 
     success = upload_catchup_file(client, user_id, catchup_json)
-    # 수집 상태 메시지 삭제
-    delete_dm(client, user_id, status_ts)
     if success:
         send_dm(client, user_id, "✅ 메시지 수집 완료! 워커가 요약을 생성합니다.")
     else:

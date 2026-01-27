@@ -60,17 +60,51 @@ class CatchupWorker:
         self._dm_channel = response['channel']['id']
         return self._dm_channel
 
-    def _send_dm(self, text: str):
-        """사용자에게 DM 전송 (봇 토큰 사용)"""
+    def _send_dm(self, text: str) -> str:
+        """사용자에게 DM 전송 (봇 토큰 사용). 메시지 ts를 반환한다."""
         try:
             dm_channel = self._get_dm_channel()
-            self.bot_client.chat_postMessage(
+            result = self.bot_client.chat_postMessage(
                 channel=dm_channel,
                 text=text,
-                mrkdwn=True
+                mrkdwn=True,
+                unfurl_links=False,
+                unfurl_media=False,
             )
+            return result.get("ts", "")
         except Exception as e:
             logger.error(f"Failed to send DM: {e}")
+            return ""
+
+    def _delete_dm(self, message_ts: str):
+        """DM 메시지 삭제"""
+        if not message_ts:
+            return
+        try:
+            dm_channel = self._get_dm_channel()
+            self.bot_client.chat_delete(channel=dm_channel, ts=message_ts)
+        except Exception as e:
+            logger.warning(f"Failed to delete DM message: {e}")
+
+    def _cleanup_status_messages(self):
+        """DM에서 봇의 중간 상태 메시지(수집 완료 등)를 삭제"""
+        status_keywords = (
+            "메시지를 수집하고 요약하는 중",
+            "메시지 수집 완료",
+            "Claude로 요약을 생성하는 중",
+        )
+        try:
+            dm_channel = self._get_dm_channel()
+            result = self.user_client.conversations_history(
+                channel=dm_channel,
+                limit=20,
+            )
+            for msg in result.get("messages", []):
+                text = msg.get("text", "")
+                if any(kw in text for kw in status_keywords):
+                    self._delete_dm(msg["ts"])
+        except Exception as e:
+            logger.warning(f"Failed to cleanup status messages: {e}")
 
     def _poll_dm_files(self) -> list[dict]:
         """DM에서 catchup_data_*.json 파일 검색 (유저 토큰 사용 → rate limit 분리)"""
@@ -218,12 +252,16 @@ class CatchupWorker:
             logger.info(f"Parsed {len(results)} channel(s) from {filename}")
 
             # 요약 생성
-            self._send_dm("⏳ Claude로 요약을 생성하는 중입니다...")
+            progress_ts = self._send_dm("⏳ Claude로 요약을 생성하는 중입니다...")
 
             if len(results) == 1:
                 summary = self.summarizer.summarize(results[0])
             else:
                 summary = self.summarizer.summarize_multiple(results)
+
+            # 중간 상태 메시지 삭제 (수집 완료 + 요약 생성중)
+            self._delete_dm(progress_ts)
+            self._cleanup_status_messages()
 
             # 요약 DM 전송
             self._send_dm(summary)

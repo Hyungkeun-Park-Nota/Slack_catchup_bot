@@ -21,6 +21,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Bolt가 CLIENT_ID/SECRET을 감지하면 OAuth 모드로 전환되어 BOT_TOKEN을 무시함.
+# OAuth 변수는 oauth_server.py에서만 필요하므로 봇 초기화 전에 환경에서 제거한다.
+for _key in ("SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"):
+    os.environ.pop(_key, None)
+
 # Slack 앱 초기화
 app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
@@ -59,8 +64,8 @@ def handle_catchup(ack, command, client, logger):
         return
     
     # 처리 시작 알림
-    send_dm(client, user_id, "⏳ 메시지를 수집하고 요약하는 중입니다...")
-    
+    status_ts = send_dm(client, user_id, "⏳ 메시지를 수집하고 요약하는 중입니다...")
+
     # 메시지 수집기 초기화
     collector = MessageCollector(client)
     
@@ -108,8 +113,10 @@ def handle_catchup(ack, command, client, logger):
     )
 
     success = upload_catchup_file(client, user_id, catchup_json)
+    # 수집 상태 메시지 삭제
+    delete_dm(client, user_id, status_ts)
     if success:
-        send_dm(client, user_id, "✅ 메시지 수집 완료! 데이터 파일을 업로드했습니다. 로컬 워커가 요약을 생성합니다.")
+        send_dm(client, user_id, "✅ 메시지 수집 완료! 워커가 요약을 생성합니다.")
     else:
         send_dm(client, user_id, "❌ 데이터 파일 업로드에 실패했습니다.")
 
@@ -253,21 +260,37 @@ def clear_dm(client, user_id: str):
         logger.error(f"Failed to clear DM for {user_id}: {e}")
 
 
-def send_dm(client, user_id: str, message: str):
-    """사용자에게 DM 전송"""
+def send_dm(client, user_id: str, message: str) -> str:
+    """사용자에게 DM 전송. 메시지 ts를 반환한다."""
     try:
         # DM 채널 열기
         response = client.conversations_open(users=[user_id])
         dm_channel = response['channel']['id']
-        
+
         # 메시지 전송
-        client.chat_postMessage(
+        result = client.chat_postMessage(
             channel=dm_channel,
             text=message,
-            mrkdwn=True
+            mrkdwn=True,
+            unfurl_links=False,
+            unfurl_media=False,
         )
+        return result.get("ts", "")
     except Exception as e:
         logger.error(f"Failed to send DM to {user_id}: {e}")
+        return ""
+
+
+def delete_dm(client, user_id: str, message_ts: str):
+    """DM 메시지 삭제"""
+    if not message_ts:
+        return
+    try:
+        response = client.conversations_open(users=[user_id])
+        dm_channel = response['channel']['id']
+        client.chat_delete(channel=dm_channel, ts=message_ts)
+    except Exception as e:
+        logger.warning(f"Failed to delete DM message: {e}")
 
 
 @app.event("app_mention")

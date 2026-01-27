@@ -239,6 +239,7 @@ class MessageCollector:
                         channel=channel_id,
                         oldest=str(oldest),
                         latest=str(latest),
+                        inclusive=True,
                         limit=200,
                         cursor=cursor
                     )
@@ -254,6 +255,7 @@ class MessageCollector:
                             channel=channel_id,
                             oldest=str(oldest),
                             latest=str(latest),
+                            inclusive=True,
                             limit=200,
                             cursor=cursor
                         )

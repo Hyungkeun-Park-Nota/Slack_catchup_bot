@@ -12,6 +12,7 @@ import os
 import ssl
 import json
 import logging
+import threading
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -48,6 +49,8 @@ class OAuthHandler(BaseHTTPRequestHandler):
             self._handle_start()
         elif parsed.path == "/callback":
             self._handle_callback(parsed)
+        elif parsed.path == "/done":
+            self._handle_done()
         else:
             self._respond(200, "Catchup Bot OAuth Server\n\n/start 로 이동하여 인증을 시작하세요.")
 
@@ -125,12 +128,32 @@ SLACK_USER_ID={user_id}</div>
 <div class="env-box">python app/worker.py</div>
 <br>
 <p><strong>이 토큰은 다시 표시되지 않습니다.</strong> 지금 복사해주세요.</p>
+<br>
+<button onclick="window.location.href='/done'" style="background:#4CAF50; color:white; padding:12px 24px; border:none; border-radius:8px; font-size:16px; cursor:pointer;">복사 완료 (서버 종료)</button>
 </body></html>"""
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
+
+    def _handle_done(self):
+        """토큰 확인 완료 → 서버 종료"""
+        html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>종료</title>
+<style>body { font-family: -apple-system, sans-serif; text-align: center; margin-top: 80px; }</style>
+</head><body>
+<h2>OAuth 서버가 종료되었습니다.</h2>
+<p>이 페이지를 닫아도 됩니다.</p>
+</body></html>"""
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html.encode("utf-8"))
+
+        logger.info("Token confirmed. Shutting down OAuth server...")
+        threading.Thread(target=self.server.shutdown).start()
 
     def _respond(self, status, message):
         self.send_response(status)

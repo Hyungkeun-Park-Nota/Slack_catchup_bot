@@ -182,6 +182,7 @@ Slack에서 `/catchup`을 실행하면, 워커가 자동으로 요약을 생성�
 /catchup 12h          # 최근 12시간 요약
 /catchup 1w           # 최근 1주일 요약
 /catchup from:링크    # 특정 메시지 이후 요약
+/catchup clear        # 봇 DM 내 메시지/파일 전체 삭제
 
 # 옵션
 --threads             # 쓰레드 내용 포함

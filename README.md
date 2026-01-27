@@ -13,10 +13,9 @@ Slack 채널 메시지를 AI로 요약해서 DM으로 전달하는 봇입니다.
 
 ## 요구사항
 
-- Python 3.11+
-- Docker & Docker Compose (배포용)
+- Python 3.9+
+- Claude Code CLI (로그인 필요)
 - Slack App 토큰
-- Anthropic API 키
 
 ## 설치 및 실행
 
@@ -37,16 +36,22 @@ Bot Token Scopes에 추가:
 - `groups:read` - 프라이빗 채널 정보
 - `im:write` - DM 전송
 - `users:read` - 사용자 정보 조회
+- `reactions:read` - 리액션 조회
 
-### 3. 슬래시 커맨드 등록
+### 3. Socket Mode 활성화
+
+1. Slack App 설정에서 "Socket Mode" 활성화
+2. App-Level Token 생성 (이름: 아무거나)
+3. 생성된 `xapp-...` 토큰 저장
+
+### 4. 슬래시 커맨드 등록
 
 Slash Commands에서:
 - Command: `/catchup`
-- Request URL: `https://your-server.com/slack/events`
+- Request URL: `https://placeholder.com` (Socket Mode에서는 사용 안함)
 - Description: "채널 메시지 요약"
 
-### 4. 환경변수 설정
-
+### 5. 환경변수 설정
 ```bash
 cp .env.example .env
 ```
@@ -56,15 +61,22 @@ cp .env.example .env
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 SLACK_SIGNING_SECRET=...
-ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### 5. 로컬 실행
+### 6. Claude Code CLI 준비
+```bash
+# 설치 확인
+claude --version
 
+# 로그인 (처음 한번)
+claude
+```
+
+### 7. 로컬 실행
 ```bash
 # 가상환경 생성
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 
 # 의존성 설치
 pip install -r requirements.txt
@@ -73,21 +85,7 @@ pip install -r requirements.txt
 python app/main.py
 ```
 
-### 6. Docker 배포
-
-```bash
-# 빌드 및 실행
-docker-compose up -d
-
-# 로그 확인
-docker-compose logs -f
-
-# 중지
-docker-compose down
-```
-
 ## 사용법
-
 ```
 /catchup              # 도움말
 /catchup 3d           # 최근 3일 요약
@@ -102,41 +100,31 @@ docker-compose down
 ```
 
 ## 출력 예시
-
 ```
 📬 #backend 요약 (2024-01-15 09:00 ~ 2024-01-18 14:30)
 
 🔴 액션 필요
-• 배포 전 코드 리뷰 요청됨 (@HK 멘션) [원본↗]
+- 배포 전 코드 리뷰 요청됨 (@HK 멘션) [원본↗]
 
 📌 의사결정 사항
-• Redis TTL 30분→1시간으로 변경 확정 [원본↗]
+- Redis TTL 30분→1시간으로 변경 확정 [원본↗]
 
 📢 공지/변경
-• 금요일 배포 → 목요일로 변경 [원본↗]
+- 금요일 배포 → 목요일로 변경 [원본↗]
 
 💬 주요 논의
-• 모델 경량화 방안 논의 중 [원본↗]
+- 모델 경량화 방안 논의 중 [원본↗]
 ```
 
-## 개발
+## 서버 배포
 
-### ngrok으로 로컬 테스트
-
+서버에서 실행하려면:
+1. 서버에 Claude Code CLI 설치 및 로그인
+2. 봇을 백그라운드로 실행 (nohup, systemd, screen 등)
 ```bash
-# ngrok 실행
-ngrok http 3000
-
-# Slack App Request URL을 ngrok URL로 변경
-# https://xxxx.ngrok.io/slack/events
+# 예: nohup 사용
+nohup python app/main.py > catchup.log 2>&1 &
 ```
-
-### Socket Mode (ngrok 없이 테스트)
-
-1. Slack App 설정에서 Socket Mode 활성화
-2. App-Level Token 생성 (`connections:write` scope)
-3. `.env`에 `SLACK_APP_TOKEN` 추가
-4. 실행하면 Socket Mode로 자동 연결
 
 ## 라이선스
 

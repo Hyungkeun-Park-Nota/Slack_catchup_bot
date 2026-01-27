@@ -181,7 +181,10 @@ def step4_oauth_token() -> bool:
     existing_token = _read_env_value("SLACK_USER_TOKEN")
     if existing_token and existing_token.startswith("xoxp-") and existing_token != "xoxp-your-user-token":
         _print_ok("SLACK_USER_TOKEN이 이미 설정되어 있습니다.")
-        answer = input("  기존 토큰을 유지하시겠습니까? (Y/n): ").strip().lower()
+        try:
+            answer = input("  기존 토큰을 유지하시겠습니까? (Y/n): ").strip().lower()
+        except EOFError:
+            answer = "y"
         if answer != "n":
             return True
 
@@ -246,7 +249,10 @@ def step4_oauth_token() -> bool:
 def step5_run_worker():
     _print_step(5, "워커 실행")
 
-    answer = input("  지금 워커를 실행하시겠습니까? (Y/n): ").strip().lower()
+    try:
+        answer = input("  지금 워커를 실행하시겠습니까? (Y/n): ").strip().lower()
+    except EOFError:
+        answer = "n"
     if answer == "n":
         print()
         print("  나중에 워커를 실행하려면:")

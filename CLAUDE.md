@@ -21,8 +21,10 @@ Slack 채널 메시지를 AI(Claude CLI)로 요약해서 DM으로 전달하는 �
 app/
   main.py          - 중앙 봇 (Slack Bolt, Socket Mode)
                      /catchup 슬래시 커맨드 수신, 메시지 수집, JSON 파일 DM 업로드
+                     Bolt OAuth 모드 충돌 방지를 위해 CLIENT_ID/SECRET을 환경에서 제거 후 초기화
   worker.py        - 로컬 워커
                      DM 폴링(5초 간격), 파일 감지, Claude CLI 요약, 결과 DM 전송
+                     요약 완료 후 중간 상태 메시지 자동 삭제
   oauth_server.py  - OAuth 서버 (HTTPS, 자체 서명 인증서)
                      유저 토큰(xoxp-) 발급. --auto-save 플래그로 .env 자동 저장 지원
   catchup.py       - 데이터 모델 및 메시지 수집기
@@ -138,6 +140,18 @@ docker-compose up -d
 /catchup clear                       # 봇 DM 메시지/파일 전체 삭제
 ```
 
+## 주의사항
+
+### Bolt OAuth 모드 충돌
+- `.env`에 `SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET`이 있으면 Bolt가 자동으로 OAuth 모드로 전환됨
+- `main.py`에서 봇 초기화 전에 해당 변수를 `os.environ`에서 제거하여 해결
+- 이 변수들은 `oauth_server.py`에서만 사용됨
+
+### DM 메시지 동작
+- 링크 프리뷰(unfurl) 비활성화: `unfurl_links=False`, `unfurl_media=False`
+- 중간 상태 메시지("수집 중", "수집 완료", "요약 생성 중")는 요약 완료 후 자동 삭제
+- 최종 요약 메시지만 DM에 남음
+
 ## 트러블슈팅
 
 ### OAuth 서버가 시작되지 않음
@@ -147,6 +161,11 @@ docker-compose up -d
 ### 브라우저 인증서 경고
 - 자체 서명 인증서 사용. '고급' → '계속 진행' 클릭
 - 인증서는 `certs/` 디렉토리에 자동 생성됨
+
+### /catchup 명령 시 "installation is no longer available" 에러
+- `main.py`가 Bolt OAuth 모드로 전환된 경우 발생
+- `main.py` 코드에서 `os.environ.pop("SLACK_CLIENT_ID")` 처리가 되어 있는지 확인
+- 봇 프로세스 재시작
 
 ### 워커가 요약을 생성하지 않음
 - `claude --version`으로 Claude CLI 설치 확인

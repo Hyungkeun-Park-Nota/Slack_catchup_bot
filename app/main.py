@@ -74,7 +74,7 @@ def handle_catchup(ack, command, client, logger):
         result = collector.collect_thread(
             channel_id=cmd.in_channel,
             thread_ts=cmd.in_timestamp,
-            include_bots=cmd.include_bots
+            include_bots=not cmd.exclude_bots
         )
         delete_dm(client, user_id, status_ts)
         if result.error:
@@ -152,7 +152,7 @@ def handle_catchup(ack, command, client, logger):
             oldest=oldest,
             latest=latest,
             include_threads=cmd.include_threads,
-            include_bots=cmd.include_bots
+            include_bots=not cmd.exclude_bots
         )
         if result.error:
             # 에러가 있는 채널은 즉시 사용자에게 알림

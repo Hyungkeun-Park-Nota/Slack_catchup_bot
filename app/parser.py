@@ -22,7 +22,7 @@ class CatchupCommand:
     in_timestamp: Optional[str] = None      # in: 링크에서 추출한 타임스탬프
     in_channel: Optional[str] = None        # in: 링크에서 추출한 채널 ID
     include_threads: bool = False           # --threads 플래그
-    include_bots: bool = False              # --include-bots 플래그
+    exclude_bots: bool = False             # --exclude-bots 플래그
     channels: list[str] = None              # --channels 옵션
     error: Optional[str] = None             # 파싱 에러 메시지
 
@@ -147,9 +147,9 @@ def parse_command(text: str) -> CatchupCommand:
         if token == '--threads':
             cmd.include_threads = True
         
-        # --include-bots 플래그
-        elif token == '--include-bots':
-            cmd.include_bots = True
+        # --exclude-bots 플래그
+        elif token == '--exclude-bots':
+            cmd.exclude_bots = True
         
         # --channels 옵션
         elif token.startswith('--channels:'):
@@ -254,7 +254,7 @@ def get_help_message() -> str:
 
 *옵션*
 • `--threads` - 쓰레드 내용 포함
-• `--include-bots` - 봇 메시지 포함
+• `--exclude-bots` - 봇 메시지 제외
 • `--channels:#ch1,#ch2` - 다중 채널 지정
 
 *예시*

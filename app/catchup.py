@@ -294,16 +294,25 @@ class MessageCollector:
                 raw_messages = result.get('messages', [])
                 logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
 
+                # 진단: raw 메시지가 0이면 첫 몇 개 구조 로깅
+                if not raw_messages:
+                    logger.warning(f"[DIAG] 0 raw messages from API. channel={channel_id}, channel_name={channel_name}, oldest={oldest}, latest={latest}")
+                elif len(messages) == 0:  # 첫 페이지일 때만
+                    for i, sample in enumerate(raw_messages[:3]):
+                        logger.info(f"[DIAG] raw_msg[{i}]: subtype={sample.get('subtype')}, bot_id={sample.get('bot_id')}, user={sample.get('user')}, text_len={len(sample.get('text', ''))}, attachments={len(sample.get('attachments', []))}, keys={list(sample.keys())}")
+
+                skipped_bot = 0
+                skipped_subtype = 0
                 for msg in raw_messages:
                     # 봇 메시지 필터링
                     is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
                     if is_bot and not include_bots:
-                        logger.debug(f"Skipping bot message: {msg.get('text', '')[:50]}")
+                        skipped_bot += 1
                         continue
 
                     # 서브타입 메시지 스킵 (채널 입장/퇴장 등)
                     if msg.get('subtype') in ['channel_join', 'channel_leave', 'channel_topic']:
-                        logger.debug(f"Skipping subtype: {msg.get('subtype')}")
+                        skipped_subtype += 1
                         continue
                     
                     user_id = msg.get('user', 'unknown')
@@ -329,6 +338,9 @@ class MessageCollector:
                     
                     messages.append(message)
                 
+                if skipped_bot or skipped_subtype:
+                    logger.info(f"[DIAG] Filtered out: bot={skipped_bot}, subtype={skipped_subtype} (include_bots={include_bots})")
+
                 # 페이지네이션
                 if not result.get('has_more', False):
                     break
@@ -340,7 +352,9 @@ class MessageCollector:
             
             # 시간순 정렬 (오래된 순)
             messages.sort(key=lambda m: float(m.ts))
-            
+
+            logger.info(f"[DIAG] Final: channel={channel_name}, collected={len(messages)}, time_range={time.strftime('%Y-%m-%d %H:%M', time.localtime(oldest))} ~ {time.strftime('%Y-%m-%d %H:%M', time.localtime(latest))}")
+
             return CatchupResult(
                 channel_name=channel_name,
                 messages=messages,

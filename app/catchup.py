@@ -230,19 +230,6 @@ class MessageCollector:
         messages = []
         
         try:
-            # 채널 진단 정보
-            try:
-                ch_info = self.client.conversations_info(channel=channel_id)
-                ch = ch_info['channel']
-                logger.info(
-                    f"Channel info: id={channel_id}, name={ch.get('name')}, "
-                    f"is_private={ch.get('is_private')}, is_member={ch.get('is_member')}, "
-                    f"is_shared={ch.get('is_shared')}, is_ext_shared={ch.get('is_ext_shared')}, "
-                    f"is_archived={ch.get('is_archived')}"
-                )
-            except Exception as e:
-                logger.warning(f"Channel info failed for {channel_id}: {e}")
-
             # 메시지 히스토리 조회
             cursor = None
             logger.info(f"Fetching messages: channel={channel_id}, oldest={oldest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(oldest))}), latest={latest} ({time.strftime('%Y-%m-%d %H:%M', time.localtime(latest))})")
@@ -279,29 +266,7 @@ class MessageCollector:
                 raw_messages = result.get('messages', [])
                 logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
 
-                # 0건이면 시간 필터 없이 최근 메시지 진단 조회
-                if not raw_messages and cursor is None:
-                    try:
-                        diag = self.client.conversations_history(channel=channel_id, limit=3)
-                        diag_msgs = diag.get('messages', [])
-                        logger.info(f"DIAG: {len(diag_msgs)} latest messages without time filter")
-                        for dm in diag_msgs:
-                            logger.info(
-                                f"DIAG MSG: ts={dm.get('ts')}, subtype={dm.get('subtype')}, "
-                                f"user={dm.get('user')}, bot_id={dm.get('bot_id')}, "
-                                f"text={dm.get('text', '')[:80]!r}"
-                            )
-                    except Exception as e:
-                        logger.warning(f"DIAG query failed: {e}")
-
                 for msg in raw_messages:
-                    # 메시지 raw 구조 로그 (디버그용)
-                    logger.info(
-                        f"MSG raw: subtype={msg.get('subtype')}, bot_id={msg.get('bot_id')}, "
-                        f"user={msg.get('user')}, text={msg.get('text', '')[:80]!r}, "
-                        f"has_attachments={bool(msg.get('attachments'))}, has_blocks={bool(msg.get('blocks'))}"
-                    )
-
                     # 봇 메시지 필터링
                     is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
                     if is_bot and not include_bots:

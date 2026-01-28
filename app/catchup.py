@@ -294,21 +294,34 @@ class MessageCollector:
                 raw_messages = result.get('messages', [])
                 logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
 
-                # 진단: raw 메시지가 0이면 시간범위 없이 재시도하여 원인 파악
-                if not raw_messages:
-                    logger.warning(f"[DIAG] 0 raw messages from API. channel={channel_id}, channel_name={channel_name}, oldest={oldest}, latest={latest}")
-                    # 시간범위 없이 최근 메시지 조회 시도
-                    try:
-                        probe = self.client.conversations_history(channel=channel_id, limit=5)
-                        probe_msgs = probe.get('messages', [])
-                        logger.warning(f"[DIAG] Probe (no time filter): {len(probe_msgs)} messages found")
-                        for i, pm in enumerate(probe_msgs[:3]):
-                            logger.warning(f"[DIAG] probe[{i}]: ts={pm.get('ts')}, subtype={pm.get('subtype')}, text={pm.get('text', '')[:80]}")
-                    except Exception as probe_err:
-                        logger.warning(f"[DIAG] Probe failed: {probe_err}")
-                elif len(messages) == 0:  # 첫 페이지일 때만
-                    for i, sample in enumerate(raw_messages[:3]):
-                        logger.info(f"[DIAG] raw_msg[{i}]: subtype={sample.get('subtype')}, bot_id={sample.get('bot_id')}, user={sample.get('user')}, text_len={len(sample.get('text', ''))}, attachments={len(sample.get('attachments', []))}, keys={list(sample.keys())}")
+                # Fallback: 시간 필터로 0개 반환 시, 필터 없이 재조회 후 수동 필터링
+                if not raw_messages and cursor is None:
+                    logger.warning(f"Time-filtered query returned 0 messages for {channel_name}, falling back to unfiltered fetch")
+                    fallback_cursor = None
+                    while True:
+                        fb_result = self.client.conversations_history(
+                            channel=channel_id,
+                            limit=200,
+                            cursor=fallback_cursor
+                        )
+                        fb_msgs = fb_result.get('messages', [])
+                        if not fb_msgs:
+                            break
+                        for fm in fb_msgs:
+                            msg_ts = float(fm.get('ts', '0'))
+                            if msg_ts < oldest:
+                                # 시간 범위보다 오래된 메시지 → 이후 메시지도 전부 오래됨 (역순)
+                                fb_msgs = []
+                                break
+                            if msg_ts <= latest:
+                                raw_messages.append(fm)
+                        # oldest보다 오래된 메시지가 나왔거나 더 이상 없으면 중단
+                        if not fb_msgs or not fb_result.get('has_more', False):
+                            break
+                        fallback_cursor = fb_result.get('response_metadata', {}).get('next_cursor')
+                        if len(raw_messages) >= self.MAX_MESSAGES_PER_CHANNEL:
+                            break
+                    logger.info(f"Fallback fetched {len(raw_messages)} messages in time range for {channel_name}")
 
                 skipped_bot = 0
                 skipped_subtype = 0

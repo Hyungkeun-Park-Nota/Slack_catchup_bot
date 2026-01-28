@@ -296,7 +296,7 @@ class MessageCollector:
 
                 # Fallback: 시간 필터로 0개 반환 시, 필터 없이 재조회 후 수동 필터링
                 if not raw_messages and cursor is None:
-                    logger.warning(f"Time-filtered query returned 0 messages for {channel_name}, falling back to unfiltered fetch")
+                    logger.info(f"Time-filtered query returned 0 for {channel_name}, falling back to unfiltered fetch")
                     fallback_cursor = None
                     while True:
                         fb_result = self.client.conversations_history(
@@ -323,18 +323,14 @@ class MessageCollector:
                             break
                     logger.info(f"Fallback fetched {len(raw_messages)} messages in time range for {channel_name}")
 
-                skipped_bot = 0
-                skipped_subtype = 0
                 for msg in raw_messages:
                     # 봇 메시지 필터링
                     is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
                     if is_bot and not include_bots:
-                        skipped_bot += 1
                         continue
 
                     # 서브타입 메시지 스킵 (채널 입장/퇴장 등)
                     if msg.get('subtype') in ['channel_join', 'channel_leave', 'channel_topic']:
-                        skipped_subtype += 1
                         continue
                     
                     user_id = msg.get('user', 'unknown')
@@ -360,8 +356,6 @@ class MessageCollector:
                     
                     messages.append(message)
                 
-                if skipped_bot or skipped_subtype:
-                    logger.info(f"[DIAG] Filtered out: bot={skipped_bot}, subtype={skipped_subtype} (include_bots={include_bots})")
 
                 # 페이지네이션
                 if not result.get('has_more', False):
@@ -374,8 +368,6 @@ class MessageCollector:
             
             # 시간순 정렬 (오래된 순)
             messages.sort(key=lambda m: float(m.ts))
-
-            logger.info(f"[DIAG] Final: channel={channel_name}, collected={len(messages)}, time_range={time.strftime('%Y-%m-%d %H:%M', time.localtime(oldest))} ~ {time.strftime('%Y-%m-%d %H:%M', time.localtime(latest))}")
 
             return CatchupResult(
                 channel_name=channel_name,

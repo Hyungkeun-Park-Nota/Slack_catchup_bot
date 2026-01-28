@@ -267,6 +267,13 @@ class MessageCollector:
                 logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
 
                 for msg in raw_messages:
+                    # 메시지 raw 구조 로그 (디버그용)
+                    logger.info(
+                        f"MSG raw: subtype={msg.get('subtype')}, bot_id={msg.get('bot_id')}, "
+                        f"user={msg.get('user')}, text={msg.get('text', '')[:80]!r}, "
+                        f"has_attachments={bool(msg.get('attachments'))}, has_blocks={bool(msg.get('blocks'))}"
+                    )
+
                     # 봇 메시지 필터링
                     is_bot = msg.get('bot_id') is not None or msg.get('subtype') == 'bot_message'
                     if is_bot and not include_bots:

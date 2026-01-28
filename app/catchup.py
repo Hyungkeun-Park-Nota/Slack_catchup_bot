@@ -278,6 +278,7 @@ class MessageCollector:
 
                         logger.info(f"퍼블릭 채널 자동 참여: {channel_id}")
                         self.client.conversations_join(channel=channel_id)
+                        time.sleep(1)  # join 직후 history 조회 시 빈 결과 방지
                         result = self.client.conversations_history(
                             channel=channel_id,
                             oldest=str(oldest),

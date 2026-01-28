@@ -294,9 +294,18 @@ class MessageCollector:
                 raw_messages = result.get('messages', [])
                 logger.info(f"API returned {len(raw_messages)} raw messages for {channel_id}")
 
-                # 진단: raw 메시지가 0이면 첫 몇 개 구조 로깅
+                # 진단: raw 메시지가 0이면 시간범위 없이 재시도하여 원인 파악
                 if not raw_messages:
                     logger.warning(f"[DIAG] 0 raw messages from API. channel={channel_id}, channel_name={channel_name}, oldest={oldest}, latest={latest}")
+                    # 시간범위 없이 최근 메시지 조회 시도
+                    try:
+                        probe = self.client.conversations_history(channel=channel_id, limit=5)
+                        probe_msgs = probe.get('messages', [])
+                        logger.warning(f"[DIAG] Probe (no time filter): {len(probe_msgs)} messages found")
+                        for i, pm in enumerate(probe_msgs[:3]):
+                            logger.warning(f"[DIAG] probe[{i}]: ts={pm.get('ts')}, subtype={pm.get('subtype')}, text={pm.get('text', '')[:80]}")
+                    except Exception as probe_err:
+                        logger.warning(f"[DIAG] Probe failed: {probe_err}")
                 elif len(messages) == 0:  # 첫 페이지일 때만
                     for i, sample in enumerate(raw_messages[:3]):
                         logger.info(f"[DIAG] raw_msg[{i}]: subtype={sample.get('subtype')}, bot_id={sample.get('bot_id')}, user={sample.get('user')}, text_len={len(sample.get('text', ''))}, attachments={len(sample.get('attachments', []))}, keys={list(sample.keys())}")

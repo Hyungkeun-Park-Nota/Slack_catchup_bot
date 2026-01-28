@@ -90,6 +90,33 @@ class MessageCollector:
         except SlackApiError:
             return None
     
+    @staticmethod
+    def _extract_text(msg: dict) -> str:
+        """메시지에서 텍스트 추출. text가 비어있으면 attachments에서 추출."""
+        text = msg.get('text', '')
+        if text:
+            return text
+
+        # attachments에서 텍스트 추출 (RSS/봇 메시지용)
+        attachments = msg.get('attachments', [])
+        if attachments:
+            parts = []
+            for att in attachments:
+                title = att.get('title', '')
+                att_text = att.get('text', '')
+                fallback = att.get('fallback', '')
+                if title:
+                    title_link = att.get('title_link', '')
+                    parts.append(f"{title} ({title_link})" if title_link else title)
+                if att_text:
+                    parts.append(att_text)
+                elif fallback and fallback != title:
+                    parts.append(fallback)
+            if parts:
+                return '\n'.join(parts)
+
+        return ''
+
     def get_permalink(self, channel: str, ts: str) -> str:
         """메시지 퍼머링크 생성"""
         try:
@@ -162,7 +189,7 @@ class MessageCollector:
                         ts=msg['ts'],
                         user=user_id,
                         user_name=self.get_user_name(user_id) if not is_bot else msg.get('username', 'Bot'),
-                        text=msg.get('text', ''),
+                        text=self._extract_text(msg),
                         channel=channel_id,
                         channel_name=channel_name,
                         permalink=self.get_permalink(channel_id, msg['ts']),
@@ -284,7 +311,7 @@ class MessageCollector:
                         ts=msg['ts'],
                         user=user_id,
                         user_name=self.get_user_name(user_id) if not is_bot else msg.get('username', 'Bot'),
-                        text=msg.get('text', ''),
+                        text=self._extract_text(msg),
                         channel=channel_id,
                         channel_name=channel_name,
                         permalink=self.get_permalink(channel_id, msg['ts']),
@@ -364,7 +391,7 @@ class MessageCollector:
                     ts=msg['ts'],
                     user=user_id,
                     user_name=self.get_user_name(user_id) if not is_bot else msg.get('username', 'Bot'),
-                    text=msg.get('text', ''),
+                    text=self._extract_text(msg),
                     channel=channel_id,
                     channel_name=self.get_channel_name(channel_id),
                     permalink=self.get_permalink(channel_id, msg['ts']),

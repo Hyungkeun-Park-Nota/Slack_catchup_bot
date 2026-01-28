@@ -264,8 +264,8 @@ class MessageCollector:
                 try:
                     result = self.client.conversations_history(
                         channel=channel_id,
-                        oldest=str(oldest),
-                        latest=str(latest),
+                        oldest=f"{oldest:.6f}",
+                        latest=f"{latest:.6f}",
                         inclusive=True,
                         limit=200,
                         cursor=cursor
@@ -281,8 +281,8 @@ class MessageCollector:
                         time.sleep(1)  # join 직후 history 조회 시 빈 결과 방지
                         result = self.client.conversations_history(
                             channel=channel_id,
-                            oldest=str(oldest),
-                            latest=str(latest),
+                            oldest=f"{oldest:.6f}",
+                            latest=f"{latest:.6f}",
                             inclusive=True,
                             limit=200,
                             cursor=cursor

@@ -203,17 +203,18 @@ python app/worker.py
 ## 사용법
 
 ```
-/catchup              # 도움말
-/catchup 3d           # 최근 3일 요약
-/catchup 12h          # 최근 12시간 요약
-/catchup 1w           # 최근 1주일 요약
-/catchup from:링크    # 특정 메시지 이후 요약
-/catchup clear        # 봇 DM 내 메시지/파일 전체 삭제
+/catchup                                        # 도움말
+/catchup 3d                                     # 최근 3일 요약
+/catchup 12h                                    # 최근 12시간 요약
+/catchup 1w                                     # 최근 1주일 요약
+/catchup from:링크|시간(YYYY-MM-DD) to:링크|시간     # 특정 메시지 이후 요약
+/catchup in:링크                                 # 특정 메세지만 요약
+/catchup clear                                  # 봇 DM 내 메시지/파일 전체 삭제
 
 # 옵션
---threads             # 쓰레드 내용 포함
---include-bots        # 봇 메시지 포함
---channels:#a,#b      # 다중 채널 지정
+--threads                                       # 쓰레드 내용 포함
+--include-bots                                  # 봇 메시지 포함
+--channels:#a,#b                                # 다중 채널 지정
 ```
 
 ## 출력 예시

@@ -22,8 +22,10 @@ Slack 채널 메시지를 AI로 요약해서 DM으로 전달하는 봇입니다.
 
 ## 기능
 
-- 기간별 채널 메시지 요약 (`/catchup 3d`)
-- 특정 시점부터 요약 (`/catchup from:링크`)
+- 기간별 채널 메시지 요약 (`/catchup 3d`, `12h`, `1w`)
+- 특정 시점/날짜부터 요약 (`/catchup from:<링크>`, `from:<YYYY-MM-DD>`)
+- 시간 범위 지정 (`from:<시작> to:<끝>`)
+- 특정 스레드만 요약 (`/catchup in:<링크>`)
 - 쓰레드 포함 옵션 (`--threads`)
 - 다중 채널 지원 (`--channels:#ch1,#ch2`)
 - 리액션/답글 기반 중요도 판단
@@ -203,24 +205,26 @@ python app/worker.py
 ## 사용법
 
 ```
-/catchup                                        # 도움말
-/catchup 3d                                     # 최근 3일 요약
-/catchup 12h                                    # 최근 12시간 요약
-/catchup 1w                                     # 최근 1주일 요약
-/catchup from:링크|시간(YYYY-MM-DD) to:링크|시간     # 특정 메시지 이후 요약
-/catchup in:링크                                 # 특정 메세지만 요약
-/catchup clear                                  # 봇 DM 내 메시지/파일 전체 삭제
+/catchup                            # 도움말
+/catchup 3d                         # 최근 3일 요약
+/catchup 12h                        # 최근 12시간 요약
+/catchup 1w                         # 최근 1주일 요약
+/catchup from:<링크|YYYY-MM-DD>     # 특정 시점 이후 ~ 현재까지 요약
+/catchup from:<시작> to:<끝>        # 시작~끝 범위 요약 (링크 또는 날짜)
+/catchup 3d to:<YYYY-MM-DD>         # 지정 날짜 기준 최근 3일 요약
+/catchup in:<링크>                  # 특정 스레드만 요약 (--threads 불필요)
+/catchup clear                      # 봇 DM 내 메시지/파일 전체 삭제
 
 # 옵션
---threads                                       # 쓰레드 내용 포함
---include-bots                                  # 봇 메시지 포함
---channels:#a,#b                                # 다중 채널 지정
+--threads                           # 쓰레드 내용 포함 (기간 요약 시)
+--exclude-bots                      # 봇 메시지 제외
+--channels:#a,#b                    # 다중 채널 지정
 ```
 
 ## 출력 예시
 
 ```
-📬 #backend 요약 (2024-01-15 09:00 ~ 2024-01-18 14:30)
+📬 #backend 요약 (2026-01-26 09:00 ~ 2026-01-29 14:30)
 
 🔴 액션 필요
 - 배포 전 코드 리뷰 요청됨 (@HK 멘션) [원본↗]
